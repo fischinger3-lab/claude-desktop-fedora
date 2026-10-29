@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['fedora-build-source-v2.zip', '.github/workflows/fedora-updates.yml']
+    paths: ['fedora-build-source-v3.zip', '.github/workflows/fedora-updates.yml']
 permissions:
   contents: write
 concurrency:
@@ -27,13 +27,14 @@ jobs:
           persist-credentials: false
       - name: Verify and unpack build sources
         run: |
-          echo 'b8da434d224d2b8dc46ddde6f88390ec7590c6ae5a858a55c593f6535205cf89  fedora-build-source-v2.zip' | sha256sum -c -
+          echo 'b8990183fd4d19dd72e231f9613cab0b9585359dc2667d17380f86690bd431e1  fedora-build-source-v3.zip' | sha256sum -c -
           mkdir source
-          unzip -q fedora-build-source-v2.zip -d source
+          unzip -q fedora-build-source-v3.zip -d source
       - name: Run source tests
         working-directory: source
         run: |
           python3 fedora/test_update.py
+          python3 fedora/test_icon_install.py
           bats tests/dependencies.bats tests/app-asar.bats tests/official-deb-download.bats tests/launcher-prelaunch-calls.bats
       - name: Check official Claude version
         id: official
@@ -67,6 +68,11 @@ jobs:
           rpm2cpio ./*.rpm | (cd ../rpm-check && cpio -idm --quiet)
           desktop-file-validate ../rpm-check/usr/share/applications/claude-desktop-unofficial.desktop
           bash -n ../rpm-check/usr/bin/claude-desktop-unofficial
+          test -s ../rpm-check/usr/share/icons/hicolor/256x256/apps/claude-desktop-unofficial.png
+          grep -Fx 'Icon=claude-desktop-unofficial' ../rpm-check/usr/share/applications/claude-desktop-unofficial.desktop
+          cp ../rpm-check/usr/share/icons/hicolor/256x256/apps/claude-desktop-unofficial.png claude-desktop.png
+          cp ../fedora/install-appimage.py install-appimage.py
+          sha256sum -- *.rpm *.AppImage claude-desktop.png install-appimage.py > SHA256SUMS
           chmod +x ./*.AppImage
           ./*.AppImage --appimage-extract-and-run --version | grep -Fx "claude-desktop-unofficial $VERSION"
       - name: Publish verified release
@@ -81,5 +87,5 @@ jobs:
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "Claude $VERSION für Fedora 44" --notes-file release-notes.md
           fi
-          gh release upload "$TAG" dist/*.rpm dist/*.AppImage dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" dist/*.rpm dist/*.AppImage dist/claude-desktop.png dist/install-appimage.py dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
