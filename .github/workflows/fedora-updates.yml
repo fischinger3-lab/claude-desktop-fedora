@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['fedora-build-source.zip', '.github/workflows/fedora-updates.yml']
+    paths: ['fedora-build-source-v2.zip', '.github/workflows/fedora-updates.yml']
 permissions:
   contents: write
 concurrency:
@@ -27,9 +27,9 @@ jobs:
           persist-credentials: false
       - name: Verify and unpack build sources
         run: |
-          echo '8bc86f9e8c26415deea3c90c6daaa8ee537346df4a2b496891c4eac0a43c0b70  fedora-build-source.zip' | sha256sum -c -
+          echo 'b8da434d224d2b8dc46ddde6f88390ec7590c6ae5a858a55c593f6535205cf89  fedora-build-source-v2.zip' | sha256sum -c -
           mkdir source
-          unzip -q fedora-build-source.zip -d source
+          unzip -q fedora-build-source-v2.zip -d source
       - name: Run source tests
         working-directory: source
         run: |
@@ -47,7 +47,9 @@ jobs:
         env:
           GITHUB_ACTIONS: 'false'
           CI: 'true'
-        run: bash build-fedora.sh --deb "$PWD/official.deb" --arch amd64
+        run: |
+          echo '%_binary_payload w9.zstdio' > "$HOME/.rpmmacros"
+          bash build-fedora.sh --deb "$PWD/official.deb" --arch amd64
       - name: Verify packages
         if: steps.official.outputs.build == 'true'
         working-directory: source
