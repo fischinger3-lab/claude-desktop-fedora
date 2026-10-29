@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['fedora-build-source-v3.zip', '.github/workflows/fedora-updates.yml']
+    paths: ['fedora-build-source-v4.zip', '.github/workflows/fedora-updates.yml']
 permissions:
   contents: write
 concurrency:
@@ -21,15 +21,15 @@ jobs:
         shell: bash
     steps:
       - name: Install Fedora build tools
-        run: dnf install -y git gh python3 unzip cpio rpm-build wget curl binutils tar xz zstd findutils nodejs npm bats desktop-file-utils
+        run: dnf install -y git gh python3 unzip cpio rpm-build wget curl binutils tar xz zstd findutils nodejs npm bats desktop-file-utils gnupg2 rpm-sign createrepo_c
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
       - name: Verify and unpack build sources
         run: |
-          echo 'b8990183fd4d19dd72e231f9613cab0b9585359dc2667d17380f86690bd431e1  fedora-build-source-v3.zip' | sha256sum -c -
+          echo '90f04e184521fa271ab6524b3cd03daf16a75ff9b40e26289ca9054f718a6f75  fedora-build-source-v4.zip' | sha256sum -c -
           mkdir source
-          unzip -q fedora-build-source-v3.zip -d source
+          unzip -q fedora-build-source-v4.zip -d source
       - name: Run source tests
         working-directory: source
         run: |
@@ -75,6 +75,26 @@ jobs:
           sha256sum -- *.rpm *.AppImage claude-desktop.png install-appimage.py > SHA256SUMS
           chmod +x ./*.AppImage
           ./*.AppImage --appimage-extract-and-run --version | grep -Fx "claude-desktop-unofficial $VERSION"
+      - name: Build repository setup RPM
+        if: steps.official.outputs.build == 'true'
+        working-directory: source
+        run: bash fedora/build-repo-package.sh
+      - name: Sign RPMs and repository metadata
+        if: steps.official.outputs.build == 'true'
+        working-directory: source
+        env:
+          RPM_SIGNING_KEY: ${{ secrets.RPM_SIGNING_KEY }}
+          TAG: ${{ steps.official.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$RPM_SIGNING_KEY" || { echo 'RPM_SIGNING_KEY secret is required'; exit 1; }
+          export GNUPGHOME="$RUNNER_TEMP/claude-rpm-signing"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+          trap 'gpgconf --kill all || true; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s\n' "$RPM_SIGNING_KEY" | gpg --batch --import
+          unset RPM_SIGNING_KEY
+          bash fedora/sign-repository.sh
       - name: Publish verified release
         if: steps.official.outputs.build == 'true'
         working-directory: source
@@ -89,3 +109,10 @@ jobs:
           fi
           gh release upload "$TAG" dist/*.rpm dist/*.AppImage dist/claude-desktop.png dist/install-appimage.py dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Publish signed DNF repository
+        if: steps.official.outputs.build == 'true'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.official.outputs.tag }}
+        run: bash fedora/publish-repository.sh
