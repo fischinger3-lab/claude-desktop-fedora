@@ -1,0 +1,83 @@
+name: Fedora Updates
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['fedora-build-source.zip', '.github/workflows/fedora-updates.yml']
+permissions:
+  contents: write
+concurrency:
+  group: fedora-release
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install Fedora build tools
+        run: dnf install -y git gh python3 unzip cpio rpm-build wget curl binutils tar xz zstd findutils nodejs npm bats desktop-file-utils
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Verify and unpack build sources
+        run: |
+          echo '8bc86f9e8c26415deea3c90c6daaa8ee537346df4a2b496891c4eac0a43c0b70  fedora-build-source.zip' | sha256sum -c -
+          mkdir source
+          unzip -q fedora-build-source.zip -d source
+      - name: Run source tests
+        working-directory: source
+        run: |
+          python3 fedora/test_update.py
+          bats tests/dependencies.bats tests/app-asar.bats tests/official-deb-download.bats tests/launcher-prelaunch-calls.bats
+      - name: Check official Claude version
+        id: official
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 fedora/update.py
+      - name: Build RPM and AppImage
+        if: steps.official.outputs.build == 'true'
+        working-directory: source
+        env:
+          GITHUB_ACTIONS: 'false'
+          CI: 'true'
+        run: bash build-fedora.sh --deb "$PWD/official.deb" --arch amd64
+      - name: Verify packages
+        if: steps.official.outputs.build == 'true'
+        working-directory: source
+        env:
+          VERSION: ${{ steps.official.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c SHA256SUMS
+          rpm -K ./*.rpm
+          test "$(rpm -qp --qf '%{VERSION}' ./*.rpm)" = "$VERSION"
+          test "$(rpm -qp --qf '%{ARCH}' ./*.rpm)" = x86_64
+          rpm -qplv ./*.rpm | grep -E '^-rwsr-xr-x.* /usr/lib/claude-desktop-unofficial/chrome-sandbox$'
+          mkdir ../rpm-check
+          rpm2cpio ./*.rpm | (cd ../rpm-check && cpio -idm --quiet)
+          desktop-file-validate ../rpm-check/usr/share/applications/claude-desktop-unofficial.desktop
+          bash -n ../rpm-check/usr/bin/claude-desktop-unofficial
+          chmod +x ./*.AppImage
+          ./*.AppImage --appimage-extract-and-run --version | grep -Fx "claude-desktop-unofficial $VERSION"
+      - name: Publish verified release
+        if: steps.official.outputs.build == 'true'
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.official.outputs.tag }}
+          VERSION: ${{ steps.official.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "Claude $VERSION für Fedora 44" --notes-file release-notes.md
+          fi
+          gh release upload "$TAG" dist/*.rpm dist/*.AppImage dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
