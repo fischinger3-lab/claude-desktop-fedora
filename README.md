@@ -34,7 +34,7 @@ der Patches erfordern.
 
 ## Quellcode
 
-`fedora-build-source-v2.zip` enthält die Buildskripte, Anpassungen, Tests und die
+`fedora-build-source-v3.zip` enthält die Buildskripte, Anpassungen, Tests und die
 MIT-/Apache-Lizenztexte der Buildskripte. Das proprietäre Claude-Programm ist
 nicht im Quellarchiv enthalten; es wird beim Build vom Hersteller geladen.
 Der Workflow prüft vor dem Entpacken die SHA-256-Prüfsumme dieses Archivs.
@@ -51,3 +51,19 @@ Inaktivität deaktiviert werden. Der Workflow muss dann auf GitHub wieder
 aktiviert werden. Keine Weitergabe persönlicher Tokens an die Buildskripte.
 
 AppImage-Updates werden über die Release-Downloads verteilt; es ist keine automatische AppImage-Updatequelle eingebettet.
+
+## AppImage mit Icon und Anmeldung installieren
+
+Aus demselben Release AppImage, `claude-desktop.png` und `install-appimage.py`
+in einen gemeinsamen Ordner laden. Dann ohne sudo ausführen:
+
+```bash
+python3 install-appimage.py ./claude-desktop-unofficial-*.AppImage
+```
+
+Die Installationshilfe kopiert das Programm an einen festen Ort unter
+`~/.local/opt/claude-desktop/`, installiert das Original-Icon und schreibt den
+Desktop-Eintrag `claude-fedora-appimage.desktop` mit einer gültigen `Icon=`-Angabe.
+Ein vorhandener gleichnamiger Eintrag wird damit repariert. Persönliche
+Claude-Profildaten werden nicht verändert. Künftige AppImage-Updates können
+über denselben Befehl installiert werden. Für das RPM ist diese Hilfe nicht nötig.
