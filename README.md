@@ -34,7 +34,7 @@ der Patches erfordern.
 
 ## Quellcode
 
-`fedora-build-source.zip` enthält die Buildskripte, Anpassungen, Tests und die
+`fedora-build-source-v2.zip` enthält die Buildskripte, Anpassungen, Tests und die
 MIT-/Apache-Lizenztexte der Buildskripte. Das proprietäre Claude-Programm ist
 nicht im Quellarchiv enthalten; es wird beim Build vom Hersteller geladen.
 Der Workflow prüft vor dem Entpacken die SHA-256-Prüfsumme dieses Archivs.
@@ -49,3 +49,5 @@ versioniert; vollständige bitgenaue Reproduzierbarkeit wird nicht zugesagt.
 Geplante GitHub-Läufe können verzögert sein und bei längerer Repository-
 Inaktivität deaktiviert werden. Der Workflow muss dann auf GitHub wieder
 aktiviert werden. Keine Weitergabe persönlicher Tokens an die Buildskripte.
+
+AppImage-Updates werden über die Release-Downloads verteilt; es ist keine automatische AppImage-Updatequelle eingebettet.
