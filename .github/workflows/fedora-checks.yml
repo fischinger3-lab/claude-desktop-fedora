@@ -1,0 +1,66 @@
+name: Fedora Package Checks
+on:
+  pull_request:
+    paths:
+      - fedora-build-source-v4.zip
+      - .github/workflows/fedora-checks.yml
+      - .github/workflows/fedora-updates.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install build tools
+        run: dnf install -y git python3 unzip cpio rpm-build wget curl binutils tar xz zstd findutils nodejs npm bats desktop-file-utils dpkg
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Unpack sources and run regression tests
+        run: |
+          unzip -q fedora-build-source-v4.zip -d source
+          cd source
+          python3 fedora/test_update.py
+          python3 fedora/test_icon_install.py
+          bats tests/dependencies.bats tests/app-asar.bats tests/official-deb-download.bats tests/launcher-prelaunch-calls.bats tests/tray-icon-selection.bats
+      - name: Build RPM, AppImage and DEB against Claude 6.28899.2
+        working-directory: source
+        env:
+          GITHUB_ACTIONS: 'false'
+        run: |
+          curl -fL --retry 3 -o official.deb https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop/claude-desktop_6.28899.2_amd64.deb
+          echo 'b7cbcc47a8c37cfe409eb146885b0196ffcd9b1f29be1642eb78a894d89ef6b1  official.deb' | sha256sum -c -
+          echo '%_binary_payload w9.zstdio' > "$HOME/.rpmmacros"
+          bash build-fedora.sh --deb "$PWD/official.deb" --arch amd64
+          bash build.sh --build deb --deb "$PWD/official.deb" --arch amd64 --clean yes
+      - name: Verify built packages
+        working-directory: source
+        run: |
+          pkg=claude-desktop-unofficial
+          version=6.28899.2
+          deb="${pkg}_${version}_amd64.deb"
+          (cd dist && sha256sum -c SHA256SUMS)
+          rpm -K dist/*.rpm
+          test "$(rpm -qp --qf '%{VERSION} %{ARCH}' dist/*.rpm)" = "$version x86_64"
+          rpm -qplv dist/*.rpm | grep -E '^-rwsr-xr-x.* /usr/lib/claude-desktop-unofficial/chrome-sandbox$'
+          mkdir rpm-check
+          rpm2cpio dist/*.rpm | (cd rpm-check && cpio -idm --quiet)
+          test "$(dpkg-deb -f "$deb" Version)" = "$version"
+          test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          dpkg-deb -x "$deb" deb-check
+          for root in rpm-check deb-check; do
+            desktop-file-validate "$root/usr/share/applications/$pkg.desktop"
+            grep -Fx "Icon=$pkg" "$root/usr/share/applications/$pkg.desktop"
+            test -s "$root/usr/share/icons/hicolor/256x256/apps/$pkg.png"
+            bash -n "$root/usr/bin/$pkg"
+            grep -aFq 'process.env.CLAUDE_TRAY_USE_DARK_ICON==="1"' "$root/usr/lib/$pkg/resources/app.asar"
+          done
+          dist/*.AppImage --appimage-extract-and-run --version | grep -Fx "$pkg $version"
