@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
       - name: Verify and unpack build sources
         run: |
-          echo '90f04e184521fa271ab6524b3cd03daf16a75ff9b40e26289ca9054f718a6f75  fedora-build-source-v4.zip' | sha256sum -c -
+          echo '38d73b2fbce93341e07337671dd8b73949a034a4df6824c2373fdb123b26fdf6  fedora-build-source-v4.zip' | sha256sum -c -
           mkdir source
           unzip -q fedora-build-source-v4.zip -d source
       - name: Run source tests
@@ -35,7 +35,7 @@ jobs:
         run: |
           python3 fedora/test_update.py
           python3 fedora/test_icon_install.py
-          bats tests/dependencies.bats tests/app-asar.bats tests/official-deb-download.bats tests/launcher-prelaunch-calls.bats
+          bats tests/dependencies.bats tests/app-asar.bats tests/official-deb-download.bats tests/launcher-prelaunch-calls.bats tests/tray-icon-selection.bats
       - name: Check official Claude version
         id: official
         working-directory: source
